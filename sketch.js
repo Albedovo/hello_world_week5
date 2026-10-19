@@ -3,6 +3,9 @@ const lumi = new Creature('Lumi');
 const byId = id => document.getElementById(id);
 let lastInteraction = 0;
 let reactionTimer;
+let lastForm = lumi.formIndex;
+let evolutionTimer;
+let renderedForm = -1;
 // A temporary visual reaction is independent from the creature's lasting stats.
 function react(kind) {
   const pet = byId('pet');
@@ -19,7 +22,7 @@ function react(kind) {
       { translate: '0 0', scale: '1 1' }
     ], { duration: kind === 'dream' ? 600 : 900, easing: 'ease-out' });
   }
-  const symbols = kind === 'love' ? ['♥', '♥', '♡'] : kind === 'snack' ? ['✦', '✧', '✦', '✧'] : kind === 'dream' ? ['z', 'z', 'Z'] : ['✓'];
+  const symbols = kind === 'evolve' ? ['✧', '✦', '✧', '✦', '✧'] : kind === 'explore' ? ['✧', '❧', '✧'] : kind === 'love' ? ['♥', '♥', '♡'] : kind === 'snack' ? ['✦', '✧', '✦', '✧'] : kind === 'dream' ? ['z', 'z', 'Z'] : ['✓'];
   const room = document.querySelector('.habitat');
   const petBox = pet.getBoundingClientRect();
   const roomBox = room.getBoundingClientRect();
@@ -53,7 +56,21 @@ function render() {
     byId(`${key}-value`).textContent = `${Math.round(lumi[key])} / 100`;
   }
   byId('age').textContent = `${Math.floor(lumi.age / 60)}:${String(Math.floor(lumi.age % 60)).padStart(2, '0')}`;
-  byId('stage').textContent = lumi.growth >= 100 ? 'Growing' : 'Baby';
+  byId('stage').textContent = lumi.form.name;
+  document.body.dataset.form = lumi.formIndex;
+  document.body.dataset.habitat = lumi.habitat;
+  byId('room-name').textContent = lumi.environment.name.toUpperCase();
+  byId('world-note').textContent = lumi.environment.description;
+  const next = Creature.forms[lumi.formIndex + 1];
+  byId('next-form').textContent = next ? `Next: ${next.name} at ${next.threshold} growth` : 'Fully evolved. Keep exploring together.';
+  byId('explore').disabled = lumi.sleeping || lumi.energy < 10 || lumi.exploreCooldown > 0;
+  byId('explore').innerHTML = lumi.exploreCooldown > 0 ? `Catch a breath… ${Math.ceil(lumi.exploreCooldown)}s <small>Your next adventure is almost ready</small>` : '✧ Explore together <small>−5 energy · +8 bond · +4 growth</small>';
+  document.querySelectorAll('[data-habitat]').forEach(button => { if (button.tagName === 'BUTTON') button.setAttribute('aria-pressed', String(button.dataset.habitat === lumi.habitat)); });
+  document.querySelectorAll('[data-speed]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.speed) === lumi.growthSpeed)));
+  if (renderedForm !== lumi.formIndex) {
+  renderedForm = lumi.formIndex;
+  byId('journey').innerHTML = Creature.forms.map((form, i) => `<div class="form-card ${i === lumi.formIndex ? 'current' : i < lumi.formIndex ? 'unlocked' : ''}"><span class="form-icon">${form.symbol}</span><small>${i === lumi.formIndex ? 'CURRENT FORM' : i < lumi.formIndex ? 'DISCOVERED' : `${form.threshold} GROWTH`}</small><h4>${form.name}</h4><p>${form.detail}</p></div>`).join('');
+  }
   byId('mood').textContent = lumi.mood;
   byId('environment').textContent = lumi.lightOn ? '☼ DAY · LIGHTS ON' : '☾ NIGHT · LIGHTS OFF';
   byId('light').textContent = lumi.lightOn ? '☾ Turn off the light' : '☼ Turn on the light';
@@ -61,7 +78,8 @@ function render() {
   byId('sleep').innerHTML = lumi.sleeping ? '☀ Wake Lumi up <small>A fresh little moment</small>' : '☾ Let Lumi rest <small>Recharge slowly</small>';
   document.body.classList.toggle('lit', lumi.lightOn);
   document.body.classList.toggle('sleeping', lumi.sleeping);
-  document.body.classList.toggle('adult', lumi.growth >= 100);
+  document.body.classList.toggle('adult', lumi.formIndex >= 1);
+  checkEvolution();
 }
 for (const [id, method] of [['feed','eat'], ['sleep','sleep'], ['pet','pet'], ['light','toggleLight']]) {
   byId(id).addEventListener('click', () => {
@@ -75,6 +93,33 @@ for (const [id, method] of [['feed','eat'], ['sleep','sleep'], ['pet','pet'], ['
     render();
   });
 }
+function checkEvolution() {
+  if (lumi.formIndex > lastForm) {
+    byId('speech').textContent = `I evolved into ${lumi.form.name}! ${lumi.form.detail}`;
+    document.body.classList.remove('evolving');
+    void document.body.offsetWidth;
+    document.body.classList.add('evolving');
+    clearTimeout(evolutionTimer);
+    evolutionTimer = setTimeout(() => document.body.classList.remove('evolving'), 1800);
+    react('evolve');
+  }
+  lastForm = lumi.formIndex;
+}
+document.querySelectorAll('.world-picker button').forEach(button => button.addEventListener('click', () => {
+  byId('speech').textContent = lumi.travel(button.dataset.habitat);
+  react('explore');
+  render();
+}));
+document.querySelectorAll('[data-speed]').forEach(button => button.addEventListener('click', () => {
+  lumi.setGrowthSpeed(Number(button.dataset.speed));
+  byId('speech').textContent = `${lumi.growthSpeed}× growth. Watch my next transformation!`;
+  render();
+}));
+byId('explore').addEventListener('click', () => {
+  byId('speech').textContent = lumi.explore();
+  react('explore');
+  render();
+});
 byId('reset').addEventListener('click', () => {
   if (confirm('Start again? Growth and bond will return to their starting values.')) {
     Object.assign(lumi, new Creature('Lumi'));
@@ -88,9 +133,7 @@ setInterval(() => {
   // Pause while the page is hidden so Lumi does not run out of energy away from you.
   const dt = document.hidden ? 0 : Math.min((now - previousTime) / 1000, 2);
   previousTime = now;
-  const wasAdult = lumi.growth >= 100;
   lumi.update(dt);
-  if (!wasAdult && lumi.growth >= 100) byId('speech').textContent = 'Look! New leaves! You helped me grow.';
   render();
 }, 250);
 render();
